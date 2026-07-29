@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>姊妹5人家庭分帳小工具 (無擋試算表同步版)</title>
+  <title>姊妹5人家庭分帳小工具 (試算表同步版)</title>
   <style>
     :root {
       --primary-color: #ff6b81;
@@ -174,7 +174,7 @@
 </div>
 
 <script>
-  // ⚠️ 貼上你的 SheetBest URL ⚠️
+  // ⚠️ 請在此處貼上你在 SheetBest 取得的專屬 Connection URL ⚠️
   const API_URL = "https://api.sheetbest.com/sheets/fa8d6932-2061-4aad-9572-67fa720ce824";
 
   const defaultFamilies = [
@@ -197,17 +197,18 @@
       const rows = await res.json();
       
       if (Array.isArray(rows) && rows.length > 0) {
-        // 解析家庭人數資料
+        // 讀取各家最新的人數設定
         families.forEach(f => {
-          const row = rows.find(r => r.id === 'family_' + f.name);
-          if (row) {
-            f.adults = parseInt(row.adults) || 0;
-            f.kids = parseFloat(row.kids) || 0;
+          const familyRows = rows.filter(r => r.id === 'family_' + f.name);
+          if (familyRows.length > 0) {
+            const lastRow = familyRows[familyRows.length - 1]; // 取最新的設定
+            f.adults = parseInt(lastRow.adults) || 0;
+            f.kids = parseFloat(lastRow.kids) || 0;
             f.weight = f.adults * 1 + f.kids * 0.5;
           }
         });
 
-        // 解析消費明細
+        // 讀取消費明細
         expenses = rows.filter(r => r.id && r.id.startsWith('expense_')).map(r => ({
           title: r.title,
           amount: parseFloat(r.amount) || 0,
@@ -223,11 +224,10 @@
     updatePayerDropdown();
   }
 
-  // 儲存完整資料到 SheetBest
+  // 將資料寫入 SheetBest (POST 方式追加寫入，最穩定防擋)
   async function saveData() {
     document.getElementById('syncStatus').innerText = "🟡 存入試算表...";
     
-    // 建立要上傳的試算表行數
     let rows = [];
     families.forEach(f => {
       rows.push({
@@ -252,13 +252,17 @@
     });
 
     try {
-      // 覆寫整張試算表
-      await fetch(API_URL, {
-        method: "PUT",
+      const res = await fetch(API_URL, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rows)
       });
-      document.getElementById('syncStatus').innerText = "🟢 試算表已同步";
+      
+      if (res.ok) {
+        document.getElementById('syncStatus').innerText = "🟢 試算表已同步";
+      } else {
+        document.getElementById('syncStatus').innerText = "🔴 寫入失敗 (請確認權限)";
+      }
     } catch (e) {
       document.getElementById('syncStatus').innerText = "🔴 儲存失敗";
     }
@@ -339,7 +343,7 @@
   }
 
   function resetAllData() {
-    if(confirm("確定要清空試算表的所有資料嗎？")) {
+    if(confirm("確定要清空網頁與試算表資料嗎？")) {
       families = JSON.parse(JSON.stringify(defaultFamilies));
       expenses = [];
       renderFamilies();
@@ -450,7 +454,7 @@
     });
   }
 
-  // 載入資料
+  // 網頁載入時讀取資料
   loadData();
 </script>
 

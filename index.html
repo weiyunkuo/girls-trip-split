@@ -148,8 +148,8 @@
   <div class="card" style="background: #fff9e6; border: 1px solid #ffeaa7;">
     <h2 style="border-bottom-color: #fdcb6e;">📍 當前活動名稱</h2>
     <div class="input-group">
-      <input type="text" id="tripName" placeholder="例如：2026花蓮三日遊" value="當前旅遊行程" onchange="saveData()">
-      <small style="color: #666; width: 100%;">變更活動名稱後，計算將獨立以此活動為主，試算表會留存所有歷史資料。</small>
+      <input type="text" id="tripName" placeholder="例如：2026花蓮三日遊" value="當前旅遊行程" onchange="loadDataByTripName()">
+      <small style="color: #666; width: 100%;">開啟網頁會自動載入最新活動。變更活動名稱可切換至不同行程查看或獨立計算。</small>
     </div>
   </div>
 
@@ -196,43 +196,71 @@
 
   let families = JSON.parse(JSON.stringify(defaultFamilies));
   let expenses = [];
+  let rawSheetData = []; // 快取試算表資料
   let lineTextResult = ""; 
 
-  // 從 SheetBest 載入資料
+  // 1. 自動抓取試算表中「最新活動」並載入
   async function loadData() {
     document.getElementById('syncStatus').innerText = "🟡 載入試算表中...";
     try {
       const res = await fetch(API_URL);
-      const rows = await res.json();
-      
-      const currentTrip = document.getElementById('tripName').value.trim();
+      rawSheetData = await res.json();
 
-      if (Array.isArray(rows) && rows.length > 0) {
-        // 只過濾出「當前活動名稱」的歷史紀錄
-        const tripRows = rows.filter(r => r.title === currentTrip || (r.id && r.id.includes(currentTrip)));
-
-        families.forEach(f => {
-          const familyRow = tripRows.find(r => r.id === `family_${currentTrip}_${f.name}`);
-          if (familyRow) {
-            f.adults = parseInt(familyRow.adults) || 0;
-            f.kids = parseFloat(familyRow.kids) || 0;
-            f.weight = f.adults * 1 + f.kids * 0.5;
-          }
-        });
-
-        expenses = tripRows.filter(r => r.id && r.id.startsWith(`expense_${currentTrip}_`)).map(r => ({
-          title: r.amount_title,
-          amount: parseFloat(r.amount) || 0,
-          payerIndex: families.findIndex(f => f.name === r.name)
-        })).filter(e => e.payerIndex !== -1);
+      if (Array.isArray(rawSheetData) && rawSheetData.length > 0) {
+        // 抓出試算表中最後一筆紀錄的活動名稱（即最新活動）
+        const validRows = rawSheetData.filter(r => r.title && r.title.trim() !== "");
+        if (validRows.length > 0) {
+          const latestTrip = validRows[validRows.length - 1].title;
+          document.getElementById('tripName').value = latestTrip;
+        }
       }
+      parseCurrentTripData();
       document.getElementById('syncStatus').innerText = "🟢 試算表已同步";
     } catch (e) {
-      document.getElementById('syncStatus').innerText = "🟢 新活動準備完畢";
+      document.getElementById('syncStatus').innerText = "🟢 準備完畢";
+      renderFamilies();
+      renderExpenses();
+      updatePayerDropdown();
     }
+  }
+
+  // 根據當前活動名稱過濾資料
+  function parseCurrentTripData() {
+    const currentTrip = document.getElementById('tripName').value.trim();
+    families = JSON.parse(JSON.stringify(defaultFamilies));
+    expenses = [];
+
+    if (Array.isArray(rawSheetData) && rawSheetData.length > 0) {
+      const tripRows = rawSheetData.filter(r => r.title === currentTrip || (r.id && r.id.includes(currentTrip)));
+
+      families.forEach(f => {
+        // 抓取該家庭在該活動最新設定的人數
+        const familyRows = tripRows.filter(r => r.id === `family_${currentTrip}_${f.name}`);
+        if (familyRows.length > 0) {
+          const lastFamilyRow = familyRows[familyRows.length - 1];
+          f.adults = parseInt(lastFamilyRow.adults) || 0;
+          f.kids = parseFloat(lastFamilyRow.kids) || 0;
+          f.weight = f.adults * 1 + f.kids * 0.5;
+        }
+      });
+
+      // 抓取該活動的消費紀錄
+      expenses = tripRows.filter(r => r.id && r.id.startsWith(`expense_${currentTrip}_`)).map(r => ({
+        title: r.amount_title,
+        amount: parseFloat(r.amount) || 0,
+        payerIndex: families.findIndex(f => f.name === r.name)
+      })).filter(e => e.payerIndex !== -1);
+    }
+
     renderFamilies();
     renderExpenses();
     updatePayerDropdown();
+  }
+
+  // 手動變更活動名稱時調用
+  function loadDataByTripName() {
+    parseCurrentTripData();
+    saveData();
   }
 
   // 將資料追加寫入 SheetBest (保持歷史紀錄)
@@ -336,7 +364,7 @@
     const payerSelect = document.getElementById('expensePayer');
 
     const title = titleInput.value.trim() || '未命名項目';
-    const amount = parseFloat(amountInput.value) || 0;
+    const amount = parseFloat(amountAmount = amountInput.value) || 0;
     const payerIndex = parseInt(payerSelect.value);
 
     if (amount <= 0) { alert('請輸入有效金額'); return; }
@@ -472,7 +500,7 @@
     });
   }
 
-  // 網頁載入時讀取資料
+  // 網頁載入時自動啟動同步
   loadData();
 </script>
 

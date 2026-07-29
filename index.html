@@ -158,13 +158,13 @@
 </div>
 
 <script>
-  // 預設 5 位姊妹家庭
+  // 預設 5 位姊妹家庭 (大人與小孩預設皆調為 0)
   let families = [
-    { name: '亞真家', adults: 2, kids: 0, weight: 2.0 },
-    { name: '渝薇家', adults: 2, kids: 0, weight: 2.0 },
-    { name: '本瑜家', adults: 2, kids: 0, weight: 2.0 },
-    { name: '瑋芸家', adults: 2, kids: 0, weight: 2.0 },
-    { name: '燕君家', adults: 2, kids: 0, weight: 2.0 }
+    { name: '亞真家', adults: 0, kids: 0, weight: 0.0 },
+    { name: '渝薇家', adults: 0, kids: 0, weight: 0.0 },
+    { name: '本瑜家', adults: 0, kids: 0, weight: 0.0 },
+    { name: '瑋芸家', adults: 0, kids: 0, weight: 0.0 },
+    { name: '燕君家', adults: 0, kids: 0, weight: 0.0 }
   ];
 
   let expenses = [];
@@ -201,7 +201,7 @@
           <span><b>${f.name}</b></span>
           <div class="family-inputs">
             <label>大:</label>
-            <input type="number" value="${f.adults}" min="1" onchange="updateFamilyCounts(${i}, parseInt(this.value)||0, families[${i}].kids)">
+            <input type="number" value="${f.adults}" min="0" onchange="updateFamilyCounts(${i}, parseInt(this.value)||0, families[${i}].kids)">
             <label>小:</label>
             <input type="number" value="${f.kids}" min="0" onchange="updateFamilyCounts(${i}, families[${i}].adults, parseInt(this.value)||0)">
           </div>
@@ -244,10 +244,12 @@
   }
 
   function calculate() {
-    if (expenses.length === 0) { alert('請先新增至少一筆消費紀錄'); return; }
-
     const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
     const totalWeight = families.reduce((sum, f) => sum + f.weight, 0);
+
+    if (totalWeight <= 0) { alert('請至少填寫一家的參與人數！'); return; }
+    if (expenses.length === 0) { alert('請先新增至少一筆消費紀錄'); return; }
+
     const unitPrice = totalAmount / totalWeight;
 
     // 計算每家先付金額

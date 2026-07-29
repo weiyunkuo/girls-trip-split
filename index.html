@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>姊妹5人家庭分帳小工具</title>
+  <title>姊妹5人家庭分帳小工具 (無擋試算表同步版)</title>
   <style>
     :root {
       --primary-color: #ff6b81;
@@ -36,7 +36,13 @@
     }
     .header-actions {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-tag {
+      font-size: 0.85rem;
+      color: #2ed573;
+      font-weight: bold;
     }
     .btn-reset {
       background-color: #c8d6e5;
@@ -44,7 +50,6 @@
       font-size: 0.85rem;
       padding: 6px 12px;
     }
-    .btn-reset:hover { background-color: #8395a7; color: white;}
     .card {
       background: var(--card-bg);
       border-radius: 12px;
@@ -95,7 +100,6 @@
       margin-top: 8px;
       background-color: #2ed573;
     }
-    .btn-calc:hover { background-color: #26af5f; }
     .btn-copy {
       width: 100%;
       padding: 10px;
@@ -103,7 +107,6 @@
       margin-top: 12px;
       background-color: #70a1ff;
     }
-    .btn-copy:hover { background-color: #1e90ff; }
     ul { list-style: none; padding: 0; margin: 0; }
     li {
       display: flex;
@@ -137,16 +140,15 @@
   <h1>👭 高中姊妹旅遊分帳工具</h1>
   
   <div class="header-actions">
-    <button class="btn-reset" onclick="resetAllData()">🗑️ 清空所有紀錄 (開新旅程)</button>
+    <span class="status-tag" id="syncStatus">📊 試算表連線中...</span>
+    <button class="btn-reset" onclick="resetAllData()">🗑️ 清空所有紀錄</button>
   </div>
 
-  <!-- 1. 成員人數設定 -->
   <div class="card">
-    <h2>1. 當次參與人數 (大人算 1 / 小孩算 0.5)</h2>
+    <h2>1. 當次參與人數 (大人 1 / 小孩 0.5)</h2>
     <ul id="familyList"></ul>
   </div>
 
-  <!-- 2. 消費紀錄 -->
   <div class="card">
     <h2>2. 新增消費付款紀錄</h2>
     <div class="input-group">
@@ -158,22 +160,23 @@
     <ul id="expenseList"></ul>
   </div>
 
-  <!-- 3. 結算按鈕與結果展示 -->
   <button class="btn-calc" onclick="calculate()">🚀 一鍵計算最佳分帳方案</button>
 
   <div class="card" id="resultCard" style="display: none;">
     <h2>3. 結算結果</h2>
     <div id="summary"></div>
     <div class="result-box">
-      <h3>👉 最佳轉帳方案（最少次數）：</h3>
+      <h3>👉 最佳轉帳方案：</h3>
       <div id="transfers"></div>
     </div>
-    <button class="btn-copy" onclick="copyResultToClipboard()">📋 複製轉帳結果（貼到 LINE 群組）</button>
+    <button class="btn-copy" onclick="copyResultToClipboard()">📋 複製轉帳結果貼到 LINE</button>
   </div>
 </div>
 
 <script>
-  // 預設名單
+  // ⚠️ 貼上你的 SheetBest URL ⚠️
+  const API_URL = "https://api.sheetbest.com/sheets/fa8d6932-2061-4aad-9572-67fa720ce824";
+
   const defaultFamilies = [
     { name: '亞真家', adults: 0, kids: 0, weight: 0.0 },
     { name: '渝薇家', adults: 0, kids: 0, weight: 0.0 },
@@ -182,52 +185,83 @@
     { name: '燕君家', adults: 0, kids: 0, weight: 0.0 }
   ];
 
-  let families = [];
+  let families = JSON.parse(JSON.stringify(defaultFamilies));
   let expenses = [];
   let lineTextResult = ""; 
 
-  // --- 自動存檔相關功能 ---
-  function saveData() {
-    localStorage.setItem('girlsTripFamilies', JSON.stringify(families));
-    localStorage.setItem('girlsTripExpenses', JSON.stringify(expenses));
-  }
+  // 從 SheetBest 讀取資料
+  async function loadData() {
+    document.getElementById('syncStatus').innerText = "🟡 載入試算表中...";
+    try {
+      const res = await fetch(API_URL);
+      const rows = await res.json();
+      
+      if (Array.isArray(rows) && rows.length > 0) {
+        // 解析家庭人數資料
+        families.forEach(f => {
+          const row = rows.find(r => r.id === 'family_' + f.name);
+          if (row) {
+            f.adults = parseInt(row.adults) || 0;
+            f.kids = parseFloat(row.kids) || 0;
+            f.weight = f.adults * 1 + f.kids * 0.5;
+          }
+        });
 
-  function loadData() {
-    const savedFamilies = localStorage.getItem('girlsTripFamilies');
-    const savedExpenses = localStorage.getItem('girlsTripExpenses');
-    
-    if (savedFamilies) {
-      families = JSON.parse(savedFamilies);
-    } else {
-      families = JSON.parse(JSON.stringify(defaultFamilies)); // 載入預設
+        // 解析消費明細
+        expenses = rows.filter(r => r.id && r.id.startsWith('expense_')).map(r => ({
+          title: r.title,
+          amount: parseFloat(r.amount) || 0,
+          payerIndex: families.findIndex(f => f.name === r.name)
+        })).filter(e => e.payerIndex !== -1);
+      }
+      document.getElementById('syncStatus').innerText = "🟢 試算表已同步";
+    } catch (e) {
+      document.getElementById('syncStatus').innerText = "🔴 連線失敗";
     }
-    
-    if (savedExpenses) {
-      expenses = JSON.parse(savedExpenses);
-    } else {
-      expenses = [];
-    }
-  }
-
-  function resetAllData() {
-    if(confirm("確定要清空所有紀錄嗎？這將會開啟一次全新的旅程計算！")) {
-      localStorage.removeItem('girlsTripFamilies');
-      localStorage.removeItem('girlsTripExpenses');
-      loadData();
-      renderFamilies();
-      renderExpenses();
-      updatePayerDropdown();
-      document.getElementById('resultCard').style.display = 'none';
-      alert("資料已清空！");
-    }
-  }
-  // -----------------------
-
-  function initFamilies() {
-    loadData();
     renderFamilies();
     renderExpenses();
     updatePayerDropdown();
+  }
+
+  // 儲存完整資料到 SheetBest
+  async function saveData() {
+    document.getElementById('syncStatus').innerText = "🟡 存入試算表...";
+    
+    // 建立要上傳的試算表行數
+    let rows = [];
+    families.forEach(f => {
+      rows.push({
+        id: 'family_' + f.name,
+        name: f.name,
+        adults: f.adults,
+        kids: f.kids,
+        title: '',
+        amount: ''
+      });
+    });
+
+    expenses.forEach((e, idx) => {
+      rows.push({
+        id: 'expense_' + idx,
+        name: families[e.payerIndex].name,
+        adults: '',
+        kids: '',
+        title: e.title,
+        amount: e.amount
+      });
+    });
+
+    try {
+      // 覆寫整張試算表
+      await fetch(API_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rows)
+      });
+      document.getElementById('syncStatus').innerText = "🟢 試算表已同步";
+    } catch (e) {
+      document.getElementById('syncStatus').innerText = "🔴 儲存失敗";
+    }
   }
 
   function updatePayerDropdown() {
@@ -245,7 +279,7 @@
     families[index].adults = adults;
     families[index].kids = kids;
     families[index].weight = adults * 1 + kids * 0.5;
-    saveData(); // 每次修改人數就自動存檔
+    saveData();
   }
 
   function renderFamilies() {
@@ -280,15 +314,15 @@
     titleInput.value = '';
     amountInput.value = '';
     
-    saveData(); // 新增消費後自動存檔
     renderExpenses();
+    saveData();
   }
 
   function removeExpense(index) {
-    if(confirm("確定要刪除這筆紀錄嗎？")) {
+    if(confirm("確定要刪除這筆紀錄嗎？這會同步更新試算表！")) {
       expenses.splice(index, 1);
-      saveData(); // 刪除消費後自動存檔
       renderExpenses();
+      saveData();
     }
   }
 
@@ -304,6 +338,17 @@
     });
   }
 
+  function resetAllData() {
+    if(confirm("確定要清空試算表的所有資料嗎？")) {
+      families = JSON.parse(JSON.stringify(defaultFamilies));
+      expenses = [];
+      renderFamilies();
+      renderExpenses();
+      saveData();
+      document.getElementById('resultCard').style.display = 'none';
+    }
+  }
+
   function calculate() {
     const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
     const totalWeight = families.reduce((sum, f) => sum + f.weight, 0);
@@ -313,13 +358,11 @@
 
     const unitPrice = totalAmount / totalWeight;
 
-    // 計算每家先付金額
     let paidMap = new Array(families.length).fill(0);
     expenses.forEach(e => {
       paidMap[e.payerIndex] += e.amount;
     });
 
-    // 計算每家應付金額與差額
     let balances = families.map((f, i) => {
       const shouldPay = f.weight * unitPrice;
       const paid = paidMap[i];
@@ -334,7 +377,6 @@
       };
     });
 
-    // 畫面顯示總覽
     let summaryHtml = `
       <p><b>💰 活動總花費：</b> $${totalAmount.toLocaleString()} 元</p>
       <p><b>👨‍👩‍👧‍👦 人數折算：</b> ${totalWeight} 人份 (大人算 1 / 小孩算 0.5)</p>
@@ -354,7 +396,6 @@
     summaryHtml += `</ul>`;
     document.getElementById('summary').innerHTML = summaryHtml;
 
-    // 貪婪演算法計算最佳轉帳
     let debtors = [];
     let creditors = [];
 
@@ -391,7 +432,6 @@
     document.getElementById('transfers').innerHTML = transfersHtml;
     document.getElementById('resultCard').style.display = 'block';
 
-    // 準備貼到 LINE 的格式文字
     lineTextResult = `📢【姊妹旅遊分帳結算報告】\n`;
     lineTextResult += `💰 總花費：$${totalAmount.toLocaleString()} 元\n\n`;
     lineTextResult += `=== 各家明細 (大人/小孩) ===\n`;
@@ -410,8 +450,8 @@
     });
   }
 
-  // 初始化載入
-  initFamilies();
+  // 載入資料
+  loadData();
 </script>
 
 </body>

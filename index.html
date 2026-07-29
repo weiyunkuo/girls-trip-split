@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>姊妹5人家庭分帳小工具</title>
+  <style>
+    :root {
+      --primary-color: #ff6b81;
+      --bg-color: #f7f8fa;
+      --card-bg: #ffffff;
+      --text-color: #2d3436;
+      --border-color: #dfe6e9;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    h1 {
+      text-align: center;
+      color: var(--primary-color);
+      margin: 8px 0;
+      font-size: 1.5rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      margin-top: 0;
+      margin-bottom: 12px;
+      border-bottom: 2px solid #ffeaa7;
+      padding-bottom: 6px;
+    }
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    input, select, button {
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+    input[type="text"] { flex: 2; min-width: 120px; }
+    input[type="number"] { width: 70px; }
+    select { flex: 2; min-width: 120px; }
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover { background-color: #ff4757; }
+    .btn-danger {
+      background-color: #ff7675;
+      padding: 4px 8px;
+      font-size: 0.85rem;
+    }
+    .btn-calc {
+      width: 100%;
+      padding: 12px;
+      font-size: 1.1rem;
+      margin-top: 8px;
+      background-color: #2ed573;
+    }
+    .btn-calc:hover { background-color: #26af5f; }
+    .btn-copy {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      margin-top: 12px;
+      background-color: #70a1ff;
+    }
+    .btn-copy:hover { background-color: #1e90ff; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--border-color);
+    }
+    .family-inputs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .result-box {
+      background-color: #f1f2f6;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 8px;
+    }
+    .transfer-item {
+      color: #2e86de;
+      font-weight: bold;
+      font-size: 1.05rem;
+      margin: 6px 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>👭 高中姊妹 5 人旅遊分帳工具</h1>
+
+  <!-- 1. 成員人數設定 -->
+  <div class="card">
+    <h2>1. 5位姊妹家庭人數設定 (大人算 1 / 小孩算 0.5)</h2>
+    <ul id="familyList"></ul>
+  </div>
+
+  <!-- 2. 消費紀錄 -->
+  <div class="card">
+    <h2>2. 新增消費付款紀錄</h2>
+    <div class="input-group">
+      <input type="text" id="expenseTitle" placeholder="項目（例：燒肉、飯店）">
+      <input type="number" id="expenseAmount" placeholder="金額">
+      <select id="expensePayer"></select>
+      <button onclick="addExpense()">紀錄</button>
+    </div>
+    <ul id="expenseList"></ul>
+  </div>
+
+  <!-- 3. 結算按鈕與結果展示 -->
+  <button class="btn-calc" onclick="calculate()">🚀 一鍵計算最佳分帳方案</button>
+
+  <div class="card" id="resultCard" style="display: none;">
+    <h2>3. 結算結果</h2>
+    <div id="summary"></div>
+    <div class="result-box">
+      <h3>👉 最佳轉帳方案（最少轉帳次數）：</h3>
+      <div id="transfers"></div>
+    </div>
+    <button class="btn-copy" onclick="copyResultToClipboard()">📋 複製轉帳結果（貼到 LINE 群組）</button>
+  </div>
+</div>
+
+<script>
+  // 預設 5 位姊妹家庭
+  let families = [
+    { name: '亞真家', adults: 2, kids: 0, weight: 2.0 },
+    { name: '渝薇家', adults: 2, kids: 0, weight: 2.0 },
+    { name: '本瑜家', adults: 2, kids: 0, weight: 2.0 },
+    { name: '瑋芸家', adults: 2, kids: 0, weight: 2.0 },
+    { name: '燕君家', adults: 2, kids: 0, weight: 2.0 }
+  ];
+
+  let expenses = [];
+  let lineTextResult = ""; // 用於複製到 LINE 的文字
+
+  function initFamilies() {
+    renderFamilies();
+    updatePayerDropdown();
+  }
+
+  function updatePayerDropdown() {
+    const payerSelect = document.getElementById('expensePayer');
+    payerSelect.innerHTML = '';
+    families.forEach((f, index) => {
+      const opt = document.createElement('option');
+      opt.value = index;
+      opt.textContent = `${f.name} 付款`;
+      payerSelect.appendChild(opt);
+    });
+  }
+
+  function updateFamilyCounts(index, adults, kids) {
+    families[index].adults = adults;
+    families[index].kids = kids;
+    families[index].weight = adults * 1 + kids * 0.5;
+  }
+
+  function renderFamilies() {
+    const list = document.getElementById('familyList');
+    list.innerHTML = '';
+    families.forEach((f, i) => {
+      list.innerHTML += `
+        <li>
+          <span><b>${f.name}</b></span>
+          <div class="family-inputs">
+            <label>大:</label>
+            <input type="number" value="${f.adults}" min="1" onchange="updateFamilyCounts(${i}, parseInt(this.value)||0, families[${i}].kids)">
+            <label>小:</label>
+            <input type="number" value="${f.kids}" min="0" onchange="updateFamilyCounts(${i}, families[${i}].adults, parseInt(this.value)||0)">
+          </div>
+        </li>`;
+    });
+  }
+
+  function addExpense() {
+    const titleInput = document.getElementById('expenseTitle');
+    const amountInput = document.getElementById('expenseAmount');
+    const payerSelect = document.getElementById('expensePayer');
+
+    const title = titleInput.value.trim() || '未命名項目';
+    const amount = parseFloat(amountInput.value) || 0;
+    const payerIndex = parseInt(payerSelect.value);
+
+    if (amount <= 0) { alert('請輸入有效金額'); return; }
+
+    expenses.push({ title, amount, payerIndex });
+    titleInput.value = '';
+    amountInput.value = '';
+    renderExpenses();
+  }
+
+  function removeExpense(index) {
+    expenses.splice(index, 1);
+    renderExpenses();
+  }
+
+  function renderExpenses() {
+    const list = document.getElementById('expenseList');
+    list.innerHTML = '';
+    expenses.forEach((e, i) => {
+      list.innerHTML += `
+        <li>
+          <span><b>${e.title}</b>：$${e.amount.toLocaleString()} 元（${families[e.payerIndex].name} 先付）</span>
+          <button class="btn-danger" onclick="removeExpense(${i})">刪除</button>
+        </li>`;
+    });
+  }
+
+  function calculate() {
+    if (expenses.length === 0) { alert('請先新增至少一筆消費紀錄'); return; }
+
+    const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalWeight = families.reduce((sum, f) => sum + f.weight, 0);
+    const unitPrice = totalAmount / totalWeight;
+
+    // 計算每家先付金額
+    let paidMap = new Array(families.length).fill(0);
+    expenses.forEach(e => {
+      paidMap[e.payerIndex] += e.amount;
+    });
+
+    // 計算每家應付金額與差額
+    let balances = families.map((f, i) => {
+      const shouldPay = f.weight * unitPrice;
+      const paid = paidMap[i];
+      return {
+        name: f.name,
+        adults: f.adults,
+        kids: f.kids,
+        weight: f.weight,
+        shouldPay: Math.round(shouldPay),
+        paid: paid,
+        diff: paid - shouldPay
+      };
+    });
+
+    // 畫面顯示總覽
+    let summaryHtml = `
+      <p><b>💰 活動總花費：</b> $${totalAmount.toLocaleString()} 元</p>
+      <p><b>👨‍👩‍👧‍👦 人數折算：</b> ${totalWeight} 人份 (大人算 1 / 小孩算 0.5)</p>
+      <p><b>💵 每人折算金額：</b> 大人 ~$${Math.round(unitPrice)} 元 / 小孩 ~$${Math.round(unitPrice*0.5)} 元</p>
+      <hr>
+      <ul>`;
+    
+    balances.forEach(b => {
+      summaryHtml += `
+        <li>
+          <span><b>${b.name}</b> (${b.adults}大${b.kids}小)：已付 $${b.paid.toLocaleString()} | 應付 $${b.shouldPay.toLocaleString()}</span>
+          <span style="color:${b.diff >= 0 ? '#2ed573' : '#ff4757'}; font-weight:bold;">
+            ${b.diff >= 0 ? '【收 $' + Math.round(b.diff).toLocaleString() + '】' : '【補 $' + Math.round(-b.diff).toLocaleString() + '】'}
+          </span>
+        </li>`;
+    });
+    summaryHtml += `</ul>`;
+    document.getElementById('summary').innerHTML = summaryHtml;
+
+    // 貪婪演算法計算最佳轉帳
+    let debtors = [];
+    let creditors = [];
+
+    balances.forEach(b => {
+      if (b.diff < -0.5) debtors.push({ name: b.name, val: -b.diff });
+      if (b.diff > 0.5) creditors.push({ name: b.name, val: b.diff });
+    });
+
+    let transfersHtml = '';
+    let lineTransferText = "";
+    let i = 0, j = 0;
+
+    while (i < debtors.length && j < creditors.length) {
+      let debtor = debtors[i];
+      let creditor = creditors[j];
+      let amount = Math.min(debtor.val, creditor.val);
+      let roundAmt = Math.round(amount);
+
+      transfersHtml += `<div class="transfer-item">💳 <b>${debtor.name}</b> 轉帳給 <b>${creditor.name}</b>：<b>$${roundAmt.toLocaleString()}</b> 元</div>`;
+      lineTransferText += `💳 ${debtor.name} 轉給 ${creditor.name}：$${roundAmt.toLocaleString()} 元\n`;
+
+      debtor.val -= amount;
+      creditor.val -= amount;
+
+      if (debtor.val < 0.5) i++;
+      if (creditor.val < 0.5) j++;
+    }
+
+    if (!transfersHtml) {
+      transfersHtml = '<div>🎉 各家付的金額剛好完美相抵，不需要額外轉帳！</div>';
+      lineTransferText = '🎉 各家付的金額剛好完美相抵，不需要額外轉帳！\n';
+    }
+
+    document.getElementById('transfers').innerHTML = transfersHtml;
+    document.getElementById('resultCard').style.display = 'block';
+
+    // 準備貼到 LINE 的格式文字
+    lineTextResult = `📢【姊妹旅遊分帳結算報告】\n`;
+    lineTextResult += `💰 總花費：$${totalAmount.toLocaleString()} 元\n\n`;
+    lineTextResult += `=== 各家明細 (大人/小孩) ===\n`;
+    balances.forEach(b => {
+      lineTextResult += `• ${b.name} (${b.adults}大${b.kids}小)：應付 $${b.shouldPay.toLocaleString()} (已付 $${b.paid.toLocaleString()})\n`;
+    });
+    lineTextResult += `\n=== 轉帳指南 ===\n${lineTransferText}`;
+  }
+
+  function copyResultToClipboard() {
+    if (!lineTextResult) return;
+    navigator.clipboard.writeText(lineTextResult).then(() => {
+      alert('已複製結算結果！可以直接貼到 LINE 群組囉！');
+    }).catch(err => {
+      alert('複製失敗，請手動複製結果');
+    });
+  }
+
+  // 初始化載入家庭名單
+  initFamilies();
+</script>
+
+</body>
+</html>

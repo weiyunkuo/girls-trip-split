@@ -34,6 +34,17 @@
       margin: 8px 0;
       font-size: 1.5rem;
     }
+    .header-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .btn-reset {
+      background-color: #c8d6e5;
+      color: #222f3e;
+      font-size: 0.85rem;
+      padding: 6px 12px;
+    }
+    .btn-reset:hover { background-color: #8395a7; color: white;}
     .card {
       background: var(--card-bg);
       border-radius: 12px;
@@ -123,11 +134,15 @@
 <body>
 
 <div class="container">
-  <h1>👭 高中姊妹 5 人旅遊分帳工具</h1>
+  <h1>👭 高中姊妹旅遊分帳工具</h1>
+  
+  <div class="header-actions">
+    <button class="btn-reset" onclick="resetAllData()">🗑️ 清空所有紀錄 (開新旅程)</button>
+  </div>
 
   <!-- 1. 成員人數設定 -->
   <div class="card">
-    <h2>1. 5位姊妹家庭人數設定 (大人算 1 / 小孩算 0.5)</h2>
+    <h2>1. 當次參與人數 (大人算 1 / 小孩算 0.5)</h2>
     <ul id="familyList"></ul>
   </div>
 
@@ -150,7 +165,7 @@
     <h2>3. 結算結果</h2>
     <div id="summary"></div>
     <div class="result-box">
-      <h3>👉 最佳轉帳方案（最少轉帳次數）：</h3>
+      <h3>👉 最佳轉帳方案（最少次數）：</h3>
       <div id="transfers"></div>
     </div>
     <button class="btn-copy" onclick="copyResultToClipboard()">📋 複製轉帳結果（貼到 LINE 群組）</button>
@@ -158,8 +173,8 @@
 </div>
 
 <script>
-  // 預設 5 位姊妹家庭 (大人與小孩預設皆調為 0)
-  let families = [
+  // 預設名單
+  const defaultFamilies = [
     { name: '亞真家', adults: 0, kids: 0, weight: 0.0 },
     { name: '渝薇家', adults: 0, kids: 0, weight: 0.0 },
     { name: '本瑜家', adults: 0, kids: 0, weight: 0.0 },
@@ -167,11 +182,51 @@
     { name: '燕君家', adults: 0, kids: 0, weight: 0.0 }
   ];
 
+  let families = [];
   let expenses = [];
-  let lineTextResult = ""; // 用於複製到 LINE 的文字
+  let lineTextResult = ""; 
+
+  // --- 自動存檔相關功能 ---
+  function saveData() {
+    localStorage.setItem('girlsTripFamilies', JSON.stringify(families));
+    localStorage.setItem('girlsTripExpenses', JSON.stringify(expenses));
+  }
+
+  function loadData() {
+    const savedFamilies = localStorage.getItem('girlsTripFamilies');
+    const savedExpenses = localStorage.getItem('girlsTripExpenses');
+    
+    if (savedFamilies) {
+      families = JSON.parse(savedFamilies);
+    } else {
+      families = JSON.parse(JSON.stringify(defaultFamilies)); // 載入預設
+    }
+    
+    if (savedExpenses) {
+      expenses = JSON.parse(savedExpenses);
+    } else {
+      expenses = [];
+    }
+  }
+
+  function resetAllData() {
+    if(confirm("確定要清空所有紀錄嗎？這將會開啟一次全新的旅程計算！")) {
+      localStorage.removeItem('girlsTripFamilies');
+      localStorage.removeItem('girlsTripExpenses');
+      loadData();
+      renderFamilies();
+      renderExpenses();
+      updatePayerDropdown();
+      document.getElementById('resultCard').style.display = 'none';
+      alert("資料已清空！");
+    }
+  }
+  // -----------------------
 
   function initFamilies() {
+    loadData();
     renderFamilies();
+    renderExpenses();
     updatePayerDropdown();
   }
 
@@ -190,6 +245,7 @@
     families[index].adults = adults;
     families[index].kids = kids;
     families[index].weight = adults * 1 + kids * 0.5;
+    saveData(); // 每次修改人數就自動存檔
   }
 
   function renderFamilies() {
@@ -223,12 +279,17 @@
     expenses.push({ title, amount, payerIndex });
     titleInput.value = '';
     amountInput.value = '';
+    
+    saveData(); // 新增消費後自動存檔
     renderExpenses();
   }
 
   function removeExpense(index) {
-    expenses.splice(index, 1);
-    renderExpenses();
+    if(confirm("確定要刪除這筆紀錄嗎？")) {
+      expenses.splice(index, 1);
+      saveData(); // 刪除消費後自動存檔
+      renderExpenses();
+    }
   }
 
   function renderExpenses() {
@@ -349,7 +410,7 @@
     });
   }
 
-  // 初始化載入家庭名單
+  // 初始化載入
   initFamilies();
 </script>
 

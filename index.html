@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>姊妹5人家庭分帳小工具 (歷史存檔版)</title>
+  <title>姊妹5人家庭分帳小工具</title>
   <style>
     :root {
       --primary-color: #ff6b81;
@@ -62,6 +62,21 @@
       margin-bottom: 12px;
       border-bottom: 2px solid #ffeaa7;
       padding-bottom: 6px;
+    }
+    .total-banner {
+      background-color: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.05rem;
+    }
+    .total-banner b {
+      color: #0d47a1;
+      font-size: 1.2rem;
     }
     .input-group {
       display: flex;
@@ -149,7 +164,7 @@
     <h2 style="border-bottom-color: #fdcb6e;">📍 當前活動名稱</h2>
     <div class="input-group">
       <input type="text" id="tripName" placeholder="例如：2026花蓮三日遊" value="當前旅遊行程" onchange="loadDataByTripName()">
-      <small style="color: #666; width: 100%;">開啟網頁會自動載入最新活動。變更活動名稱可切換至不同行程查看或獨立計算。</small>
+      <small style="color: #666; width: 100%;">開啟網頁會自動載入最新活動。變更活動名稱可切換至不同行程查看。</small>
     </div>
   </div>
 
@@ -159,7 +174,13 @@
   </div>
 
   <div class="card">
-    <h2>2. 新增消費付款紀錄</h2>
+    <h2>2. 消費付款紀錄</h2>
+    
+    <div class="total-banner">
+      <span>💰 當前行程累計總花費：</span>
+      <b id="liveTotalAmount">$0 元</b>
+    </div>
+
     <div class="input-group">
       <input type="text" id="expenseTitle" placeholder="項目（例：燒肉、飯店）">
       <input type="number" id="expenseAmount" placeholder="金額">
@@ -183,7 +204,6 @@
 </div>
 
 <script>
-  // ⚠️ 請在此處貼上你在 SheetBest 取得的專屬 Connection URL ⚠️
   const API_URL = "https://api.sheetbest.com/sheets/fa8d6932-2061-4aad-9572-67fa720ce824";
 
   const defaultFamilies = [
@@ -196,10 +216,9 @@
 
   let families = JSON.parse(JSON.stringify(defaultFamilies));
   let expenses = [];
-  let rawSheetData = []; // 快取試算表資料
+  let rawSheetData = [];
   let lineTextResult = ""; 
 
-  // 1. 自動抓取試算表中「最新活動」並載入
   async function loadData() {
     document.getElementById('syncStatus').innerText = "🟡 載入試算表中...";
     try {
@@ -207,7 +226,6 @@
       rawSheetData = await res.json();
 
       if (Array.isArray(rawSheetData) && rawSheetData.length > 0) {
-        // 抓出試算表中最後一筆紀錄的活動名稱（即最新活動）
         const validRows = rawSheetData.filter(r => r.title && r.title.trim() !== "");
         if (validRows.length > 0) {
           const latestTrip = validRows[validRows.length - 1].title;
@@ -224,17 +242,18 @@
     }
   }
 
-  // 根據當前活動名稱過濾資料
+  // 修正後的解析邏輯（防止重複載入）
   function parseCurrentTripData() {
     const currentTrip = document.getElementById('tripName').value.trim();
     families = JSON.parse(JSON.stringify(defaultFamilies));
     expenses = [];
 
     if (Array.isArray(rawSheetData) && rawSheetData.length > 0) {
+      // 1. 過濾出屬於該活動的資料
       const tripRows = rawSheetData.filter(r => r.title === currentTrip || (r.id && r.id.includes(currentTrip)));
 
+      // 2. 解析人數（只抓最新紀錄）
       families.forEach(f => {
-        // 抓取該家庭在該活動最新設定的人數
         const familyRows = tripRows.filter(r => r.id === `family_${currentTrip}_${f.name}`);
         if (familyRows.length > 0) {
           const lastFamilyRow = familyRows[familyRows.length - 1];
@@ -244,12 +263,27 @@
         }
       });
 
-      // 抓取該活動的消費紀錄
-      expenses = tripRows.filter(r => r.id && r.id.startsWith(`expense_${currentTrip}_`)).map(r => ({
-        title: r.amount_title,
-        amount: parseFloat(r.amount) || 0,
-        payerIndex: families.findIndex(f => f.name === r.name)
-      })).filter(e => e.payerIndex !== -1);
+      // 3. 解析消費明細（去重：只抓最新一次批次寫入的完整消費清單）
+      const expenseRows = tripRows.filter(r => r.id && r.id.startsWith(`expense_${currentTrip}_`));
+      
+      if (expenseRows.length > 0) {
+        // 找出最大的消費索引號 (比如 expense_當前旅遊行程_0, _1, _2 等)
+        let maxIndexMap = new Map();
+        expenseRows.forEach(r => {
+          const parts = r.id.split('_');
+          const idx = parseInt(parts[parts.length - 1]);
+          if (!isNaN(idx)) {
+            maxIndexMap.set(idx, r); // 以 idx 為 key，後蓋前以保留最新寫入的一組
+          }
+        });
+
+        // 整理出非重複的消費清單
+        expenses = Array.from(maxIndexMap.values()).map(r => ({
+          title: r.amount_title,
+          amount: parseFloat(r.amount) || 0,
+          payerIndex: families.findIndex(f => f.name === r.name)
+        })).filter(e => e.payerIndex !== -1 && e.amount > 0);
+      }
     }
 
     renderFamilies();
@@ -257,13 +291,10 @@
     updatePayerDropdown();
   }
 
-  // 手動變更活動名稱時調用
   function loadDataByTripName() {
     parseCurrentTripData();
-    saveData();
   }
 
-  // 將資料追加寫入 SheetBest (保持歷史紀錄)
   async function saveData() {
     document.getElementById('syncStatus').innerText = "🟡 存入歷史紀錄...";
     const currentTrip = document.getElementById('tripName').value.trim() || "未命名行程";
@@ -302,6 +333,8 @@
       
       if (res.ok) {
         document.getElementById('syncStatus').innerText = "🟢 歷史紀錄已同步";
+        // 寫入成功後更新本地記憶體快取
+        rawSheetData.push(...rows);
       } else {
         document.getElementById('syncStatus').innerText = "🔴 寫入失敗";
       }
@@ -364,7 +397,7 @@
     const payerSelect = document.getElementById('expensePayer');
 
     const title = titleInput.value.trim() || '未命名項目';
-    const amount = parseFloat(amountAmount = amountInput.value) || 0;
+    const amount = parseFloat(amountInput.value) || 0;
     const payerIndex = parseInt(payerSelect.value);
 
     if (amount <= 0) { alert('請輸入有效金額'); return; }
@@ -388,13 +421,16 @@
   function renderExpenses() {
     const list = document.getElementById('expenseList');
     list.innerHTML = '';
+    let total = 0;
     expenses.forEach((e, i) => {
+      total += e.amount;
       list.innerHTML += `
         <li>
           <span><b>${e.title}</b>：$${e.amount.toLocaleString()} 元（${families[e.payerIndex].name} 先付）</span>
           <button class="btn-danger" onclick="removeExpense(${i})">刪除</button>
         </li>`;
     });
+    document.getElementById('liveTotalAmount').innerText = `$${total.toLocaleString()} 元`;
   }
 
   function calculate() {
@@ -500,7 +536,6 @@
     });
   }
 
-  // 網頁載入時自動啟動同步
   loadData();
 </script>
 
